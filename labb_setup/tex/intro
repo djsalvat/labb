@@ -1,0 +1,15 @@
+\documentclass[12pt]{article}
+
+\usepackage{graphicx}
+\usepackage{amssymb}
+
+\begin{document}
+
+\title{%(name)s}
+\author{%(author)s}
+
+\maketitle
+
+\section{Introduction}
+%(intro)s
+

@@ -1,0 +1,5 @@
+\begin{figure}[ht]
+        \includegraphics[width=15cm]{%(filename)s}
+        \caption{%(text)s} 
+\end{figure}
+
