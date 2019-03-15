@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import os.path
+from os import path, isatty
 import argparse
 import sys
 import subprocess
@@ -59,7 +59,7 @@ class book:
 It contains a list of entries, as well as methods to open a new entry, add data to a current entry, and close an entry.'''
         def __init__(self,name,introduction):
                 self.__dict__.update({k:v for k,v in locals().items() if k!='self'})
-                self.directory = '.labb/' + name
+                self.directory = '.labb/books/' + name
                 self.entries = []
                 self.is_open = False
 
@@ -80,13 +80,12 @@ It contains a list of entries, as well as methods to open a new entry, add data 
         def add_entry(self,entry_data):
                 '''Checks to see if there is a current entry. Takes a datum and adds it to the data list in the current entry.
 If the data type has an associated file, it is copied into the book's directory in .labb.'''
-                if hasattr(entry_data,'filename'):
-                        original_file = entry_data.filename
-                        subprocess.call(['cp',entry_data.filename,self.directory])
-                        backup_file = '.labb/'+self.name+'/'+os.path.basename(original_file)
-                        entry_data.filename = os.path.abspath(backup_file)
-
-                if self.is_open: 
+                if self.is_open:
+                        if hasattr(entry_data,'filename'):
+                                subprocess.call(['cp',entry_data.filename,self.directory])
+                                original_file = path.basename(entry_data.filename)
+                                backup_file = '.labb/books/'+self.name+'/'+original_file
+                                entry_data.filename = path.abspath(backup_file)
                         self.entries[-1].data.append(entry_data)
                 else:
                         raise LabbError('This book does not have an open entry.')
@@ -184,10 +183,9 @@ If not, it changes the current book to book_name.'''
 		export_file.write(format_dict['outro']) #close the document.
                 export_file.close()
 
-def get_from_editor(screen_prompt, initial=''):
+def get_from_editor(initial=''):
         '''Method that opens vim, and saves a dummy text file. The contents of the dummy file are returned as a string. This is used by data types that need string input.'''
         from tempfile import NamedTemporaryFile
-
         with NamedTemporaryFile(delete=False) as tf: #create a temp file
                 tfName = tf.name
                 tf.write(initial)
@@ -197,11 +195,16 @@ def get_from_editor(screen_prompt, initial=''):
 
         with open(tfName) as tf:
             result = tf.read()
-
         if result == None:
                 raise LabbError('Text entry failed.')
-
         return result
+
+def process_input(editor_initial=''):
+        if not isatty(0):
+                text = sys.stdin.read() 
+        else:
+                text = get_from_editor(initial=editor_initial)
+        return text.strip()
 
 def save_labb(the_labb):
         '''Pickles a labb.'''
@@ -211,7 +214,7 @@ def save_labb(the_labb):
 
 def open_labb():
         '''Opens the pickled labb.'''
-        if os.path.exists('.labb/labb.p'):
+        if path.exists('.labb/labb.p'):
                 infile = open('.labb/labb.p','rb')
                 the_labb = pickle.load(infile)
                 infile.close()
@@ -220,13 +223,14 @@ def open_labb():
                 raise LabbError('You have not yet initialized labb.')
 
 def init_cmd(setup_path):
-        if os.path.exists('.labb/labb.p'):
+        if path.exists('.labb/labb.p'):
                 raise LabbError('Already initialized in current directory.')
         if len(setup_path)!=1:
                 raise LabError('labb-init expects one argument.')
         else:
                 username = getpass.getuser()
                 subprocess.call(['mkdir','.labb'])
+                subprocess.call(['mkdir','.labb/books'])
                 for ft in ['tex','md']:
                         subprocess.call(['mkdir','.labb'+'/'+ft])
                         for fn in [
@@ -257,7 +261,7 @@ def book_cmd(the_labb,args):
 
         elif len(args) == 1:
                 if args[0] not in the_labb.books:
-                        book_introduction = get_from_editor('Type the introduction: ')
+                        book_introduction = process_input()
                         the_labb.new_book(args[0],book_introduction)
                         print 'New book '+args[0]+' created.'
                 the_labb.change_current(args[0])
@@ -283,22 +287,21 @@ def close_cmd(the_labb):
 
 def add_cmd(the_labb,args):
         '''this switch statement checks to see what the data type we want to add, and adds it.'''
-
         if not the_labb.books[the_labb.current].is_open:
                 raise LabbError('There is no open entry.')
 
         if args.datatype == 'note': 
-                note_text = get_from_editor('Type the note: ')
+                note_text = process_input()
                 new_note = note(note_text)
                 the_labb.books[the_labb.current].add_entry(new_note)
                 
         elif args.datatype == 'equation':
-                equation_text = get_from_editor('Type the equation: ') 
+                equation_text = process_input() 
                 new_equation = equation(equation_text)
                 the_labb.books[the_labb.current].add_entry(new_equation)
                 
         elif args.datatype == 'citation':
-                citation_text = get_from_editor('Type the citation: ')
+                citation_text = process_input()
                 new_citation = citation(citation_text)
                 the_labb.books[the_labb.current].add_entry(new_citation)
 
@@ -306,10 +309,10 @@ def add_cmd(the_labb,args):
                 if args.filename == None:
                         raise LabbError('Supply the image filename.')
 
-                if os.path.exists(args.filename) == False:
+                if path.exists(args.filename) == False:
                         raise LabbError('File does not exist.')
                 
-                image_text = get_from_editor('Type the image caption: ')
+                image_text = process_input()
                 new_image = image(args.filename,image_text)
                 the_labb.books[the_labb.current].add_entry(new_image)
 
@@ -339,11 +342,9 @@ if __name__ == '__main__':
         mainargs = mainparser.parse_args() #this line actuall parses argv and returns the data to args
 
         if mainargs.cmd == 'init': #let's initialize. labb takes no extra arguments.
-
                 initparser = argparse.ArgumentParser(prog='labb-init',description='Initialize labb in the current folder.')
                 initparser.add_argument('setup_dir',nargs='*')
                 initargs = initparser.parse_args(mainargs.extra)
-
                 try:
                         init_cmd(initargs.setup_dir)
                 except LabbError as err:

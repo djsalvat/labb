@@ -1,13 +1,14 @@
+rm -rf .labb/
 ./labb.py init ./labb_setup
-./labb.py book nu
+echo 'A test book' | ./labb.py book kitab
 ./labb.py book
 ./labb.py entry
-./labb.py add note
-./labb.py add equation
-./labb.py add image test.png
+echo 'Just a note' | ./labb.py add note
+echo '1=2' | ./labb.py add equation
+echo 'Just a caption' | ./labb.py add image test.png
 ./labb.py tag cats
 ./labb.py tag dogs
 ./labb.py close
-./labb.py show nu
-./labb.py export nu tex
-./labb.py export nu md
+./labb.py show kitab
+./labb.py export kitab tex
+./labb.py export kitab md

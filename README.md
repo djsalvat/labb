@@ -1,5 +1,4 @@
-# labb
-### a text-based logbook
+# labb : a text-based logbook
 
 ## Intro
 A repository consists of a set of named books, which in turn contains a list of entries.  
@@ -36,3 +35,7 @@ which will open vim for the note to be typed.
     labb add image [filename]
     
 which will copy the image file to the labb repository, and open vim for you to type a caption.
+
+Piping from stdin can be used instead of the vim prompt. For example:
+
+    echo "A caption." | labb add image [filename] 
