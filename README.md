@@ -2,8 +2,10 @@
 
 ## Intro
 A repository consists of a set of named books, which in turn contains a list of entries.  
+The books and entries are saved as a json file in a hidden directory.
 Each entry can contain text, latex equations, images, code blocks (not implemented yet),  
 and citations. Tags can be added to entries for future implementation of a tag search.
+
 
 ## Usage
 An install script is still being developed. Basic usage is
