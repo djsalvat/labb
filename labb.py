@@ -8,44 +8,48 @@ from datetime import datetime
 import json
 
 class LabbError(Exception):
-    '''Base class for labb exceptions.'''
     pass
 
-class datum(dict):
-    def __init__(self,data_type='note',text='',filename=None):
-        self.__dict__.update({k:v for k,v in locals().items() if k!='self'})
-        dict.__init__(self,self.__dict__)
+class LabbObject(dict):
+    def __init__(self,**kwargs):
+        dict.__init__(self,kwargs)
+        self.__dict__.update(kwargs)
+    def __getitem__(self,k):
+        return self.__dict__[k]
+    def __setitem__(self,k,v):
+        raise LabbError('stop that!')
 
-class entry(dict):
-    '''Entry objects are appended to the entry list in the book class. They are 'open' when they are first added to the list.
-They contain a data list which can be appended until the entry is closed.'''
+class datum(LabbObject):
+    def __init__(self,data_type='note',text='',filename=None):
+        l = locals()
+        LabbObject.__init__(self,**{k:v for k,v in l.items() if k!='self'})
+
+class entry(LabbObject):
     def __init__(self,timestamp):
         self.data = []
         self.timestamp = timestamp
         self.tags = []
-        dict.__init__(self,self.__dict__)
+        l = locals()
+        LabbObject.__init__(self,**{k:v for k,v in l.items() if k!='self'})
 
-class book(dict):
-    '''A book requires an introduction from the user, as well as an author and name. A directory is created in .labb to store files associated with data.
-It contains a list of entries, as well as methods to open a new entry, add data to a current entry, and close an entry.'''
+class book(LabbObject):
     def __init__(self,name,introduction):
         self.__dict__.update({k:v for k,v in locals().items() if k!='self'})
         self.directory = '.labb/books/' + name
         self.entries = []
         self.is_open = False
-        dict.__init__(self,self.__dict__)
+        l = locals()
+        LabbObject.__init__(self,**{k:v for k,v in l.items() if k!='self'})
 
-class labb(dict):
-    '''A labb consists of a dictionary of books -- it associates a book's name with the book object.
-Has methods to create new books, and fetch existing books. labb.current stores the name of the book to which one can submit new entries.'''
+class labb(LabbObject):
     def __init__(self,author):
         self.books = {}
         self.author = author
         self.current = None 
-        dict.__init__(self,self.__dict__)
+        l = locals()
+        LabbObject.__init__(self,**{k:v for k,v in l.items() if k!='self'})
 
 def get_from_editor(initial=''):
-    '''Method that opens vim, and saves a dummy text file. The contents of the dummy file are returned as a string. This is used by data types that need string input.'''
     from tempfile import NamedTemporaryFile
     with NamedTemporaryFile(delete=False) as tf: #create a temp file
         tfName = tf.name
@@ -71,7 +75,7 @@ def update_self(s):
     s.update(s.__dict__)
 
 def update_labb(labb):
-    for bn,bk in labb.books.iteritems():
+    for bn,bk in labb.books.items():
         for ent in bk.entries:
             update_self(ent)
         update_self(bk)
@@ -86,7 +90,7 @@ def save_labb(the_labb):
 def build_labb(labb_json):
     the_labb = labb(labb_json['author'])
     the_labb.current = labb_json['current'] 
-    for book_name,the_book in labb_json['books'].iteritems():
+    for book_name,the_book in labb_json['books'].items():
         the_labb.books[book_name] = book(the_book['name'],the_book['introduction'])
         the_labb.books[book_name].is_open = the_book['is_open']
         the_labb.books[book_name].directory = the_book['directory']
@@ -132,7 +136,7 @@ class LabbCommands:
             author = raw_input('Type the author name: ')
             initial_labb = labb(author)
             save_labb(initial_labb)
-            print 'Labb initialized'
+            print('Labb initialized')
 
     @staticmethod
     def book(args):
@@ -141,11 +145,11 @@ class LabbCommands:
             for a_book in the_labb.books.keys():
                 if the_labb.current == a_book:
                     if not the_labb.books[a_book].is_open:
-                        print a_book+' *'
+                        print(a_book+' *')
                     else:
-                        print a_book+' *o'
+                        print(a_book+' *o')
                 else:
-                    print a_book
+                    print(a_book)
 
         elif len(args) == 1:
             book_name = args[0]
@@ -153,9 +157,9 @@ class LabbCommands:
                 book_introduction = process_input()
                 subprocess.call(['mkdir','.labb/books/'+book_name])
                 the_labb.books[book_name] = book(book_name,book_introduction)
-                print 'New book '+book_name+' created.'
+                print('New book '+book_name+' created.')
             the_labb.current = book_name
-            print 'Current book changed to '+the_labb.current+'.'
+            print('Current book changed to '+the_labb.current+'.')
             save_labb(the_labb)
         else:
             raise LabbError('Specify at most one book.')
@@ -170,7 +174,7 @@ class LabbCommands:
             the_labb.books[the_labb.current].entries.append(entry(timestamp))
             the_labb.books[the_labb.current].is_open = True
             save_labb(the_labb)
-            print 'New entry opened in '+the_labb.books[the_labb.current].name+'.'
+            print('New entry opened in '+the_labb.books[the_labb.current].name+'.')
 
     @staticmethod
     def close(args):
@@ -250,7 +254,7 @@ class LabbCommands:
         export_file.write(format_dict['outro']) #close the document.
         export_file.close()
 
-        print 'Book '+book_name+' exported.'
+        print('Book '+book_name+' exported.')
 
     @staticmethod
     def show(args):
@@ -263,21 +267,21 @@ class LabbCommands:
 
         the_book = the_labb.books[book_name]
 
-        print the_book.name
-        print the_labb.author+'\n'
-        print the_book.introduction+'\n'
+        print(the_book.name)
+        print(the_labb.author+'\n')
+        print(the_book.introduction+'\n')
 
         for ent in the_book.entries:
-            print ent.timestamp
+            print(ent.timestamp)
 
             for datum in ent.data:
                 if datum.filename is not None:
-                    print '<<'+datum.filename+'>>'
-                print datum.text+'\n'
+                    print('<<'+datum.filename+'>>')
+                print(datum.text+'\n')
 
-            print 'Tags:'
+            print('Tags:')
             for tag in ent.tags:
-                print tag
+                print(tag)
 
 if __name__ == '__main__':
     #when executed, labb.py is a command to manipulate a labb object, which is saved in a hidden directory .labb
@@ -285,6 +289,6 @@ if __name__ == '__main__':
     mainparser.add_argument('--version', action='version', version='Current version is 0.1.')
     mainparser.add_argument('cmd',choices=['init','book','show','entry','add','tag','close','export']) #the possible commands to perform
     mainparser.add_argument('extra',nargs='*') #some commands require extra arguments
-    mainargs = mainparser.parse_args() #this line actuall parses argv and returns the data to args
+    mainargs = mainparser.parse_args() #this line actually parses argv and returns the data to args
 
     getattr(LabbCommands,mainargs.cmd)(mainargs.extra)
