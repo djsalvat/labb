@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 from os import path, isatty
 import argparse
@@ -6,51 +6,55 @@ import sys
 import subprocess
 from datetime import datetime
 import json
+from tempfile import NamedTemporaryFile
+from dataclasses import dataclass,field
 
 class LabbError(Exception):
     pass
 
-class LabbObject(dict):
-    def __init__(self,**kwargs):
-        dict.__init__(self,kwargs)
-        self.__dict__.update(kwargs)
-    def __getitem__(self,k):
-        return self.__dict__[k]
-    def __setitem__(self,k,v):
-        raise LabbError('stop that!')
+formats = ['tex','md']
+format_types = ['intro','note','citation','image','entry','equation','tags','outro']
 
-class datum(LabbObject):
-    def __init__(self,data_type='note',text='',filename=None):
-        l = locals()
-        LabbObject.__init__(self,**{k:v for k,v in l.items() if k!='self'})
+@dataclass
+class Datum:
+    type: str = ''
+    text: str = ''
+    filename: str = ''
 
-class entry(LabbObject):
-    def __init__(self,timestamp):
-        self.data = []
-        self.timestamp = timestamp
-        self.tags = []
-        l = locals()
-        LabbObject.__init__(self,**{k:v for k,v in l.items() if k!='self'})
+@dataclass
+class Entry:
+    timestamp: str = ''
+    data: list = field(default_factory=list)
+    tags: list = field(default_factory=list)
 
-class book(LabbObject):
-    def __init__(self,name,introduction):
-        self.__dict__.update({k:v for k,v in locals().items() if k!='self'})
-        self.directory = '.labb/books/' + name
-        self.entries = []
-        self.is_open = False
-        l = locals()
-        LabbObject.__init__(self,**{k:v for k,v in l.items() if k!='self'})
+@dataclass
+class Book:
+    name: str = ''
+    introduction: str = ''
+    entries: list = field(default_factory=list)
 
-class labb(LabbObject):
-    def __init__(self,author):
-        self.books = {}
-        self.author = author
-        self.current = None 
-        l = locals()
-        LabbObject.__init__(self,**{k:v for k,v in l.items() if k!='self'})
+@dataclass
+class Labb:
+    author: str = ''
+    books: dict = field(default_factory=dict)
+    current: str = ''
+    is_open: bool = False
+
+class LabbEncoder(json.JSONEncoder):
+    def default(self,obj):
+        if any([isinstance(obj,t) for t in [Labb,Book,Entry,Datum]]):
+            return obj.__dict__
+        else:
+            return json.JSONEncoder.default(self,obj)
+
+    @staticmethod
+    def as_labb(obj):
+        for LabbType in [Labb,Book,Entry,Datum]:
+            if LabbType().__dict__.keys() == obj.keys():
+                return LabbType(**obj)
+        return obj
 
 def get_from_editor(initial=''):
-    from tempfile import NamedTemporaryFile
     with NamedTemporaryFile(delete=False) as tf: #create a temp file
         tfName = tf.name
         tf.write(initial)
@@ -71,42 +75,34 @@ def process_input(editor_initial=''):
         text = get_from_editor(initial=editor_initial)
     return text.strip()
 
-def update_self(s):
-    s.update(s.__dict__)
-
-def update_labb(labb):
-    for bn,bk in labb.books.items():
-        for ent in bk.entries:
-            update_self(ent)
-        update_self(bk)
-    update_self(labb)
-    return labb
-
 def save_labb(the_labb):
-    updated_labb = update_labb(the_labb)
-    with open('.labb/labb.json','wb') as outfile:
-        json.dump(updated_labb,outfile)
+    with open('.labb/labb.json','w') as outfile:
+        json.dump(the_labb,outfile,cls=LabbEncoder)
 
-def build_labb(labb_json):
-    the_labb = labb(labb_json['author'])
-    the_labb.current = labb_json['current'] 
-    for book_name,the_book in labb_json['books'].items():
-        the_labb.books[book_name] = book(the_book['name'],the_book['introduction'])
-        the_labb.books[book_name].is_open = the_book['is_open']
-        the_labb.books[book_name].directory = the_book['directory']
-        for entry_json in the_book['entries']:
-            the_labb.books[book_name].entries.append(entry(entry_json['timestamp']))
-            the_labb.books[book_name].entries[-1].data = [datum(data_type=datum_json['data_type'],text=datum_json['text'],filename=datum_json['filename']) for datum_json in entry_json['data']]
-            the_labb.books[book_name].entries[-1].tags = entry_json['tags']
-    return the_labb
+def open_entry(book_name,entry_timestamp):
+    with open('.labb/books/{0}/{1}/{1}.json'.format(book_name,entry_timestamp),'r') as entryfile:
+        return json.load(entryfile,object_hook=LabbEncoder.as_labb)
+
+def update_entry_data(book_name,entry_timestamp,datum):
+    with open('.labb/books/{0}/{1}/{1}.json'.format(book_name,entry_timestamp),'r') as entryfile:
+        entry = json.load(entryfile,object_hook=LabbEncoder.as_labb)
+    entry.data.append(datum)
+    with open('.labb/books/{0}/{1}/{1}.json'.format(book_name,entry_timestamp),'w') as entryfile:
+        json.dump(entry,entryfile,cls=LabbEncoder)
+
+def update_tag(book_name,entry_timestamp,tag):
+    with open('.labb/books/{0}/{1}/{1}.json'.format(book_name,entry_timestamp),'r') as entryfile:
+        entry = json.load(entryfile,object_hook=LabbEncoder.as_labb)
+        entry.tags.append(tag)
+    with open('.labb/books/{0}/{1}/{1}.json'.format(book_name,entry_timestamp),'w') as entryfile:
+        json.dump(entry,entryfile,cls=LabbEncoder)
 
 def open_labb():
     if not path.exists('.labb/labb.json'):
         raise LabbError('You have not yet initialized labb.')
     else:
-        with open('.labb/labb.json','rb') as infile:
-            the_labb_json = json.load(infile)
-        the_labb = build_labb(the_labb_json)
+        with open('.labb/labb.json','r') as infile:
+            the_labb = json.load(infile,object_hook=LabbEncoder.as_labb)
         return the_labb
 
 class LabbCommands:
@@ -120,22 +116,12 @@ class LabbCommands:
             setup_path = args[0]
             subprocess.call(['mkdir','.labb'])
             subprocess.call(['mkdir','.labb/books'])
-            for ft in ['tex','md']:
+            for ft in formats:
                 subprocess.call(['mkdir','.labb'+'/'+ft])
-                for fn in [
-                        'intro',
-                        'note',
-                        'citation',
-                        'image',
-                        'entry',
-                        'equation',
-                        'tags',
-                        'outro'
-                      ]:
+                for fn in format_types:
                     subprocess.call(['cp',setup_path+'/'+ft+'/'+fn,'.labb/'+ft+'/'])
-            author = raw_input('Type the author name: ')
-            initial_labb = labb(author)
-            save_labb(initial_labb)
+            author = input('Author: ')
+            save_labb(Labb(author,{},'',False))
             print('Labb initialized')
 
     @staticmethod
@@ -144,19 +130,16 @@ class LabbCommands:
         if len(args) == 0:
             for a_book in the_labb.books.keys():
                 if the_labb.current == a_book:
-                    if not the_labb.books[a_book].is_open:
-                        print(a_book+' *')
-                    else:
-                        print(a_book+' *o')
+                    print(a_book+' o' if the_labb.is_open else ' *')
                 else:
                     print(a_book)
 
         elif len(args) == 1:
             book_name = args[0]
             if book_name not in the_labb.books:
-                book_introduction = process_input()
+                book_introduction = process_input(editor_initial='book introduction')
                 subprocess.call(['mkdir','.labb/books/'+book_name])
-                the_labb.books[book_name] = book(book_name,book_introduction)
+                the_labb.books[book_name] = Book(book_name,book_introduction,[])
                 print('New book '+book_name+' created.')
             the_labb.current = book_name
             print('Current book changed to '+the_labb.current+'.')
@@ -167,20 +150,24 @@ class LabbCommands:
     @staticmethod
     def entry(args):
         the_labb = open_labb()
-        if the_labb.books[the_labb.current].is_open:
+        if the_labb.is_open:
             raise LabbError('There is already an open entry.')
         else:
             timestamp = datetime.utcnow().isoformat()
-            the_labb.books[the_labb.current].entries.append(entry(timestamp))
-            the_labb.books[the_labb.current].is_open = True
+            entry_path = '.labb/books/'+the_labb.current+'/'+timestamp
+            subprocess.call(['mkdir',entry_path])
+            with open('{0}/{1}.json'.format(entry_path,timestamp),'w') as entryfile:
+                json.dump(Entry(timestamp,[],[]),entryfile,cls=LabbEncoder)
+            the_labb.books[the_labb.current].entries.append(timestamp)
+            the_labb.is_open = True
             save_labb(the_labb)
             print('New entry opened in '+the_labb.books[the_labb.current].name+'.')
 
     @staticmethod
     def close(args):
         the_labb = open_labb()
-        if the_labb.books[the_labb.current].is_open:
-            the_labb.books[the_labb.current].is_open = False
+        if the_labb.is_open:
+            the_labb.is_open = False
             save_labb(the_labb)
         else:
             raise LabbError('This book does not have an open entry.')
@@ -188,31 +175,35 @@ class LabbCommands:
     @staticmethod
     def add(args):
         the_labb = open_labb()
-        if not the_labb.books[the_labb.current].is_open:
+        fn = ''
+        if not the_labb.is_open:
             raise LabbError('There is no open entry.')
         if len(args)==0:
             raise LabbError('Specify a data type.')
         elif len(args)==1:
-            fn = None
+            fn = 'None'
         else:
-            fn = args[1]
-            if not path.exists(fn):
+            if not path.exists(args[1]):
                 raise LabbError('File does not exist.')
-            subprocess.call(['cp',fn,the_labb.books[the_labb.current].directory+'/'])
+            fn = '.labb/books/' \
+                +the_labb.books[the_labb.current].name+'/' \
+                +the_labb.books[the_labb.current].entries[-1]+'/'+args[1]
+            subprocess.call(['cp',args[1],fn])
         data_type = args[0]
-        new_filename = fn if fn is None else the_labb.books[the_labb.current].directory+'/'+path.basename(fn)
-        the_labb.books[the_labb.current].entries[-1].data.append(datum(data_type=data_type,text=process_input(),filename=new_filename))
-        save_labb(the_labb)
+        update_entry_data(the_labb.books[the_labb.current].name,
+                          the_labb.books[the_labb.current].entries[-1],
+                          Datum(type=data_type,text=process_input(),filename=fn))
 
     @staticmethod
     def tag(args):
         the_labb = open_labb()
-        if not the_labb.books[the_labb.current].is_open:
+        if not the_labb.is_open:
             raise LabbError('There is no open entry.')
         if len(args)==0:
             raise LabbError('Supply a tag name.')
-        the_labb.books[the_labb.current].entries[-1].tags.append(args[0])
-        save_labb(the_labb)
+        update_tag(the_labb.books[the_labb.current].name,
+                   the_labb.books[the_labb.current].entries[-1],
+                   args[0])
 
     @staticmethod
     def export(args):
@@ -233,7 +224,7 @@ class LabbCommands:
 
         format_dict = {}
 
-        for doc in ['intro','entry','note','equation','citation','image','tags','outro']:
+        for doc in format_types:
             with open('.labb/'+format_type+'/'+doc) as f:
                 format_dict[doc] = f.read()
 
@@ -241,11 +232,12 @@ class LabbCommands:
 
         #now loop over entries and make sections for each.
 
-        for ent in the_book.entries:
+        for timestamp in the_book.entries:
+            ent = open_entry(the_book.name,timestamp)
             export_file.write(format_dict['entry'] % {'timestamp' : ent.timestamp})
 
             for dat in ent.data:
-                export_file.write(format_dict[dat.data_type] % dat)
+                export_file.write(format_dict[dat.type] % dat.__dict__)
 
             tagstring = ', '.join([t for t in ent.tags])
 
@@ -271,12 +263,12 @@ class LabbCommands:
         print(the_labb.author+'\n')
         print(the_book.introduction+'\n')
 
-        for ent in the_book.entries:
+        for timestamp in the_book.entries:
+            ent = open_entry(the_book.name,timestamp)
             print(ent.timestamp)
 
             for datum in ent.data:
-                if datum.filename is not None:
-                    print('<<'+datum.filename+'>>')
+                print('<<'+datum.filename+'>>')
                 print(datum.text+'\n')
 
             print('Tags:')
@@ -285,9 +277,9 @@ class LabbCommands:
 
 if __name__ == '__main__':
     #when executed, labb.py is a command to manipulate a labb object, which is saved in a hidden directory .labb
-    mainparser = argparse.ArgumentParser(prog='labb',description='A simple command-line logbook.') #create the parser
-    mainparser.add_argument('--version', action='version', version='Current version is 0.1.')
-    mainparser.add_argument('cmd',choices=['init','book','show','entry','add','tag','close','export']) #the possible commands to perform
+    mainparser = argparse.ArgumentParser(prog='labb',description='Labb is a command-line logbook.') #create the parser
+    mainparser.add_argument('--version', action='version', version='The current version is 0.1.')
+    mainparser.add_argument('cmd',choices=[k for k,v in LabbCommands.__dict__.items() if type(v)==staticmethod]) #any static method in LabbCommands is a possible command
     mainparser.add_argument('extra',nargs='*') #some commands require extra arguments
     mainargs = mainparser.parse_args() #this line actually parses argv and returns the data to args
 
